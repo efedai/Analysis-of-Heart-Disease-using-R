@@ -1,0 +1,252 @@
+---
+title: "Analysis of Heart Disease"
+author: "Elias Fedai"
+date: "8/5/2019"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+```{r, warning=FALSE,message=FALSE}
+library(ggplot2)
+library(knitr)
+library(mlr)
+library(tidyverse)
+library(GGally)
+library(cowplot)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(magrittr)
+library(moments)
+library(plyr)
+library(caret)
+library(caTools)
+library(corrplot)
+library(ggcorrplot)
+library(mlbench)
+library(pROC)
+library(e1071)
+clev <- read.csv(file.choose(),na = "?", stringsAsFactors = FALSE, header=F)
+swiss <- read.csv(file.choose(),na = "?", stringsAsFactors = FALSE, header=F)
+va <- read.csv(file.choose(),na = "?", stringsAsFactors = FALSE, header=F)
+combined  <-rbind(clev,swiss,va)
+names(combined) <- c('Age', 'Gender', 'CP', 'Trestbps', 'Chol', 'FBS', 'RestECG', 'Thalach', 'Exang', 'Oldpeak', 'Slope', 'CA','Thal', 'target')
+summarizeColumns(combined) %>% knitr::kable( caption =  'Initial Summary of Data')
+```
+
+*Data needs to be cleaned.
+
+```{r}
+
+ 
+combined[, sapply(combined, is.character)] <- sapply(combined[, sapply(combined, is.character)], trimws)
+ s = sum(is.na(combined))
+ combinedclean <- na.omit(combined)
+combinedclean$target[combinedclean$target == 2] <- 1
+combinedclean$target[combinedclean$target == 3] <- 1
+combinedclean$target[combinedclean$target == 4] <- 1
+combinedclean$Disease <- factor(combinedclean$target, labels = c("No Disease", "Heart Disease"))
+combinedclean$target <- as.factor(combinedclean$target)
+summarizeColumns(combinedclean) %>% knitr::kable( caption = 'Summary of Data (clean)')
+table(combinedclean$target) %>% kable(caption = 'Table of Heart Disease')
+```
+
+
+*There seems to be a lower count on heart disease cases than non heart disease cases.
+
+
+```{r}
+combinedclean$Gender[combinedclean$Gender == 0] <- 'Female'
+combinedclean$Gender[combinedclean$Gender == 1] <- 'Male'
+ combinedclean$Gender <- as.factor(combinedclean$Gender)
+ combinedclean$CP[combinedclean$CP == 1] <- 'typical angina'
+combinedclean$CP[combinedclean$CP == 2] <- 'atypical angina'
+combinedclean$CP[combinedclean$CP == 3] <- 'non-anginal pain'
+combinedclean$CP[combinedclean$CP == 4] <- 'asymptomatic'
+combinedclean$CP <- as.factor(combinedclean$CP)
+combinedclean$Exang[combinedclean$Exang == 0] <- 'no'
+combinedclean$Exang[combinedclean$Exang == 1] <- 'yes'
+combinedclean$Exang <- as.factor(combinedclean$Exang)
+combinedclean$Thal[combinedclean$Thal == 3] <- 'normal'
+combinedclean$Thal[combinedclean$Thal == 6] <- 'fixed defect'
+combinedclean$Thal[combinedclean$Thal == 7] <- 'reversable defect'
+combinedclean$Thal <- as.factor(combinedclean$Thal)
+combinedclean$FBS[combinedclean$FBS == 0] <- 'false'
+combinedclean$FBS[combinedclean$FBS == 1] <- 'true'
+combinedclean$FBS <- as.factor(combinedclean$FBS)
+combinedclean$RestECG[combinedclean$RestECG == 0] <- 'normal'
+combinedclean$RestECG[combinedclean$RestECG == 1] <- 'ST-T abnorm'
+combinedclean$RestECG[combinedclean$RestECG == 2] <- 'V.hypertrophy'
+combinedclean$RestECG <- as.factor(combinedclean$RestECG)
+combinedclean$Slope[combinedclean$Slope == 1] <- 'upsloping'
+combinedclean$Slope[combinedclean$Slope == 2] <- 'flat'
+combinedclean$Slope[combinedclean$Slope == 3] <- 'downsloping'
+combinedclean$Slope <-as.factor(combinedclean$Slope)
+```
+### Cholesterol
+```{r}
+summary(combinedclean$Chol)
+hist(combinedclean$Chol, main = "Histogram of Cholesterol", xlab = "Cholesterol(mg/dL)", border = "blue", col ="red", xlim=c(100,700), las=1, breaks = 7, probability = TRUE)
+lines(density(combinedclean$Chol))
+boxplot(combinedclean$Chol ~ combinedclean$Disease, main = "Cholestrol level", xlab = "Disease", ylab = "Cholestrol level(mg/dL)")
+```
+
+*Both heart and no disease display slightly elevated cholestrol levels.
+
+### Gender
+```{r}
+summary(combinedclean$Gender)
+mosaicplot(combinedclean$Gender ~ combinedclean$Disease, main= " Heart Disease by Gender", shade = FALSE,  color = TRUE, xlab = "Gender", ylab = "Heart Disease")
+ggplot(combinedclean, aes(x= combinedclean$Gender, fill=combinedclean$Disease)) + geom_bar() + xlab("Gender") +   ylab("Gender Count") + ggtitle("Heart Disease by Gender") +  scale_fill_discrete(name = "Heart disease", labels = c("No", "Yes"))
+```
+*Graphs/tables display more males where used in this study also there is a higher frequency of males with heart disease.
+
+
+### Thalassemia
+```{r}
+summary(combinedclean$Thal)
+
+ggplot(combinedclean, aes(x=Thal, fill=Disease)) + geom_bar()  + ggtitle("Analysis of Thalasemia(Thal)") + scale_fill_discrete(name = "Heart Disease", labels = c("No", "Yes"))
+```
+*Reversable defect displays a higher measure for heart disease.
+
+
+### Oldpeak
+```{r}
+summary(combinedclean$Oldpeak)
+
+ggplot(combinedclean, aes(x = Oldpeak, fill = Disease)) +  xlab("ST depression induced by exercise relative to rest ") + ylab("Count") + geom_density(alpha=0.5) + ggtitle("ST depression and heart disease") + scale_fill_discrete(name = "Heart disease", labels = c("No", "Yes"))
+
+boxplot(combinedclean$Oldpeak ~ combinedclean$Disease, main = "Oldpeak and Heart Disease", xlab = "Disease", ylab = "ST depression induced by exercise relative to rest")
+
+ggplot(combinedclean, aes(x=Oldpeak, fill=Disease)) + geom_bar()  + ggtitle("ST depression induced by exercise(Oldpeak) relative to rest and Heart Disease") + scale_fill_discrete(name = "Heart Disease", labels = c("No", "Yes"))
+
+```
+*Visuals for ST levels show a heavy right skewness. The no disease displays slightly more outliers.
+
+### Fasting blood sugar
+```{r}
+summary(combinedclean$FBS)
+ggplot(combinedclean, aes(x=FBS, fill=Disease)) + geom_bar()  + ggtitle("Fasting Blood Sugar(FBS)") + scale_fill_discrete(name = "Heart Disease", labels = c("No disease", "Heart Disease"))
+
+mosaicplot(combinedclean$FBS ~ combinedclean$Disease, main= "Heart Disease by Fasting Blood sugar(FBS)", shade = FALSE,  color = TRUE, xlab = "FBS", ylab = "Heart Disease")
+
+```
+*Visuals appear to show not much possible significance for fasting blood sugar.
+
+### Resting Electrocardiographic
+  
+```{r}
+summary(combinedclean$RestECG)
+
+ggplot(combinedclean, aes(x=RestECG, fill=Disease)) + geom_bar()  + ggtitle("Resting Electrocardiographic results") + scale_fill_discrete(name = "Heart Disease", labels = c("No", "Yes"))
+
+
+```
+*V hypertrophy displayed a higher count for heart disease.
+
+
+
+### Logistic regression
+
+```{r}
+set.seed(300)
+
+ind1 <-sample(2, nrow(combinedclean), replace = T, prob = c(0.7, 0.3))
+ training1 <- combinedclean[ind1 == 1,]
+ test1 <- combinedclean[ind1 == 2,]
+ 
+ model1 <- glm(target ~ Gender + Age + CP +  Trestbps + RestECG +  Thalach + Exang + Slope + CA + Thal +  Oldpeak + FBS, data = combinedclean, family = binomial)
+summary(model1)
+ 
+```
+*Parameters that were seen to be insignificant will be removed.
+  
+  
+```{r}
+model1 <- glm(target ~ Gender + CP + CA + Trestbps + Thal + Oldpeak, data = training1, family = binomial)
+model2 <- glm(target ~ Gender + CP + CA + Trestbps + Thal + Oldpeak, data = test1, family = binomial)
+summary(model1)
+
+p1 <- predict(model1, training1, type = "response")
+ pred1 <- ifelse(p1>0.5, 1, 0)
+ tab1 <- table(Predicted = pred1, Actual = training1$target)
+ tab1
+ 1- sum(diag(tab1))/sum(tab1)
+```
+*Training model displayed 18% misclassification error. Which will give an Accuracy of 82%
+
+```{r}
+with(model1, pchisq(null.deviance - deviance,  df.null-df.residual, lower.tail = F))
+```
+
+
+*fit test p value indicates this model is significant.
+
+
+```{r}
+summary(model2)
+p2 <- predict(model2, test1, type = "response")
+pred2 <- ifelse(p2>0.5, 1, 0)
+tab2 <- table(Predicted = pred2, Actual = test1$target)
+tab2
+ 1- sum(diag(tab2))/sum(tab2)
+```
+
+*Test model displayed a 13.5% misclassification error. Which will give an Accuracy of 86.5%
+```{r}
+with(model2, pchisq(null.deviance - deviance,  df.null-df.residual, lower.tail = F))
+```
+
+
+*Fit test p value indicates this model is signicant.
+ 
+```{r}
+ind2 <-sample(2, nrow(combinedclean), replace = T, prob = c(0.7, 0.3))
+ training2 <- combinedclean[ind2 == 1,]
+ test2 <- combinedclean[ind2 == 2,]
+ 
+ model3 <- glm(target ~  RestECG + Age, data = training2, family = binomial)
+ model4 <- glm(target ~  RestECG + Age, data = test2, family = binomial)
+summary(model3)
+p3 <- predict(model3, training2, type = "response")
+ pred3 <- ifelse(p3>0.5, 1, 0)
+ tab3 <- table(Predicted = pred3, Actual = training2$target)
+ tab3
+  1- sum(diag(tab3))/sum(tab3)
+```
+
+
+*training model displayed 32.2% misclassifcation error.
+ which will give an Accuracy of 67.8%
+ 
+```{r}
+with(model3, pchisq(null.deviance - deviance,  df.null-df.residual, lower.tail = F))
+```
+
+
+*Fit test p value indicates this model is signifcant.
+ 
+```{r}
+summary(model4)
+  p4 <- predict(model4, test2, type = "response")
+ pred4 <- ifelse(p4>0.5, 1, 0)
+ tab4 <- table(Predicted = pred4, Actual = test2$target)
+ tab4
+  1- sum(diag(tab4))/sum(tab4)
+```
+*Test model displayed 45.6% misclassification error. Which will give an Accuracy of 54.4%
+ 
+ 
+```{r}
+with(model4, pchisq(null.deviance - deviance,  df.null-df.residual, lower.tail = F))
+
+```
+*Fit test p value indicates this model is not significant.
+  
